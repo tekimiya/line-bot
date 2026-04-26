@@ -122,6 +122,11 @@ def ask_claude(user_message):
     return response.content[0].text
 
 
+@app.route('/', methods=['GET'])
+def health():
+    return 'OK'
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     body_bytes = request.get_data()
