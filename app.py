@@ -138,7 +138,8 @@ def webhook():
                 try:
                     response_text = ask_claude(user_message)
                     reply_to_line(reply_token, response_text)
-                except Exception:
+                except Exception as e:
+                    print(f"ERROR: {e}", flush=True)
                     reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
 
     return 'OK'
