@@ -86,7 +86,7 @@ SYSTEM_PROMPT = f"""你是杜珮瑄的長榮航空班表助理。她是長榮航
 - Y開頭+字母（YJ/YH/YI）、FL、SL、MEN、AL：各種假別
 - 待命班（字母+數字，如 Q05、Q12、J13）：待命，共3小時，公司可能臨時抓飛
 - LO：Layover（外站過夜）
-- 飛行$��：長程航班途中
+- 飛行中：長程航班途中
 
 各航班飛行時數（格式 時:分）：
 BR192 TSA→HND: 03:10
@@ -316,12 +316,11 @@ def eva_login():
         r = session.get(EVA_BASE + '/WAL/AntiRobot.aspx', timeout=15)
         vs = re.search(r'id="__VIEWSTATE"\s+value="([^"]*)"', r.text)
         vsg = re.search(r'id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"', r.text)
-        cap_src = re.search(r'id="imgValidCode"[^>]+src="([^"]+)"', r.text)
-        if not (vs and vsg and cap_src):
+        if not (vs and vsg):
+            print('EVA login: VIEWSTATE not found', flush=True)
             return None, None
-        cap_url = cap_src.group(1)
-        if not cap_url.startswith('http'):
-            cap_url = EVA_BASE + cap_url
+        import time
+        cap_url = EVA_BASE + f'/Common/ValidateCode.ashx?t={time.time()}'
         cap_img = session.get(cap_url, timeout=10)
         cap_answer = solve_captcha(cap_img.content)
         print(f'CAPTCHA answer: {cap_answer}', flush=True)
@@ -479,7 +478,7 @@ def reply_to_line(reply_token, text):
 
 def ask_claude(user_message):
     taipei = pytz.timezone('Asia/Taipei')
-    today = datetime.now(taipei).strftime('%Y噴%m月%d日（%A）')
+    today = datetime.now(taipei).strftime('%Y年%m月%d日（%A）')
     system_with_date = SYSTEM_PROMPT + f"\n\n今天台北時間是：{today}"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     response = client.messages.create(
