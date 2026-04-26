@@ -12,7 +12,7 @@ import anthropic
 from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 
-app = Flask(__name__)
+app = Flash(__name__)
 
 LINE_CHANNEL_SECRET = os.environ['LINE_CHANNEL_SECRET']
 LINE_CHANNEL_ACCESS_TOKEN = os.environ['LINE_CHANNEL_ACCESS_TOKEN']
@@ -25,104 +25,104 @@ EVA_USER = 'f59113'
 EVA_PASSWORD = os.environ.get('EVA_PASSWORD', '')
 
 SCHEDULE = """
-4月班表：
-04/01 休假 | 04/02 飛行 BR192 TSA（松山）→HND（東京羽田）07:19起飛/BR191 HND→TSA 12:41起飛 報到05:50
-04/03 生理假 | 04/04 病假
-04/05 飛行 BR281 TPE（桃園）→CEB（宿霧）08:02/BR282 CEB→TPE 12:18 報到06:00
-04/06 飛行 BR805 TPE→MFM（澳門）16:37/BR806 MFM→TPE 20:16 報到14:40
-04/07 休假(ADO) | 04/08 休假 | 04/09 休假(ADO)
-04/10 特殊假(YH) | 04/11 特殊假(YI)
-04/12 飛行 BR192 TSA→HND 07:21/BR191 HND→TSA 12:37 報到05:50
-04/13 飛行 BR772 TSA→SHA（上海虹橋）14:53/BR771 SHA→TSA 19:37 報到13:25
-04/14 休假 | 04/15 休假
-04/16 飛行(金門梭) B78801 TSA→KNH（金門）→TSA→KNH→TSA 報到06:00
-04/17 飛行 BR192 TSA→HND 07:28/BR191 HND→TSA 12:43 報到05:50
-04/18 休假(ADO) | 04/19 家庭照顧假
-04/20 飛行 BR118 TPE→SDJ（仙台）10:12 報到08:05
-04/21 飛行 BR117 SDJ→TPE 16:14 報到07:39
-04/22 飛行 BR772 TSA→SHA 15:05/BR771 SHA→TSA 19:31 報到13:25
-04/23 休假(ADO) | 04/24 特殊
-04/25 飛行 BR772 TSA→SHA 15:11/BR771 SHA→TSA 19:27 報到13:25
-04/26 休假
-04/27 飛行(馬公梭) B78607 TSA→MZG（馬公）→TSA→MZG→TSA 報到07:20
-04/28 待命(Q05) | 04/29 飛行 BR190 TSA→HND 16:20 報到14:50
-04/30 飛行(續) BR189 HND（東京羽田）→TSA 10:50
+4æç­è¡¨ï¼
+04/01 ä¼å | 04/02 é£è¡ BR192 TSAï¼æ¾å±±ï¼âHNDï¼æ±äº¬ç¾½ç°ï¼07:19èµ·é£/BR191 HNDâTSA 12:41èµ·é£ å ±å°05:50
+04/03 ççå | 04/04 çå
+04/05 é£è¡ BR281 TPEï¼æ¡åï¼âCEBï¼å®¿é§ï¼08:02/BR282 CEBâTPE 12:18 å ±å°06:00
+04/06 é£è¡ BR805 TPEâMFMï¼æ¾³éï¼16:37/BR806 MFMâTPE 20:16 å ±å°14:40
+04/07 ä¼å(ADO) | 04/08 ä¼å | 04/09 ä¼å(ADO)
+04/10 ç¹æ®å(YH) | 04/11 ç¹æ®å(YI)
+04/12 é£è¡ BR192 TSAâHND 07:21/BR191 HNDâTSA 12:37 å ±å°05:50
+04/13 é£è¡ BR772 TSAâSHAï¼ä¸æµ·è¹æ©ï¼14:53/BR771 SHAâTSA 19:37 å ±å°13:25
+04/14 ä¼å | 04/15 ä¼å
+04/16 é£è¡(ééæ¢­) B78801 TSAâKNHï¼ééï¼âTSAâKNHâTSA å ±å°06:00
+04/17 é£è¡ BR192 TSAâHND 07:28/BR191 HNDâTSA 12:43 å ±å°05:50
+04/18 ä¼å(ADO) | 04/19 å®¶åº­ç§é¡§å
+04/20 é£è¡ BR118 TPEâSDJï¼ä»å°ï¼10:12 å ±å°08:05
+04/21 é£è¡ BR117 SDJâTPE 16:14 å ±å°07:39
+04/22 é£è¡ BR772 TSAâSHA 15:05/BR771 SHAâTSA 19:31 å ±å°13:25
+04/23 ä¼å(ADO) | 04/24 ç¹æ®
+04/25 é£è¡ BR772 TSAâSHA 15:11/BR771 SHAâTSA 19:27 å ±å°13:25
+04/26 ä¼å
+04/27 é£è¡(é¦¬å¬æ¢­) B78607 TSAâMZGï¼é¦¬å¬ï¼âTSAâMZGâTSA å ±å°07:20
+04/28 å¾å½(Q05) | 04/29 é£è¡ BR190 TSAâHND 16:20 å ±å°14:50
+04/30 é£è¡(çº) BR189 HNDï¼æ±äº¬ç¾½ç°ï¼âTSA 10:50
 
-5月班表：
-05/01 休假
-05/02 飛行(金門梭) B78801 TSA→KNH→TSA→KNH→TSA 報到06:00
-05/03 飛行(金門梭) 同上 報到06:00
-05/04 待命(Q12) | 05/05 休假(ADO) | 05/06 休假
-05/07 飛行 BR772 TSA→SHA 14:55/BR771 SHA→TSA 19:40 報到13:25
-05/08 飛行(廈門) B7511 TSA→XMN（廈門）17:00/B7512 XMN→TSA 19:40 報到15:30
-05/09 飛行 BR772 TSA→SHA 14:55/BR771 SHA→TSA 19:40 報到13:25
-05/10 特殊假(YJ)
-05/11 飛行(馬公梭) B78601 TSA→MZG→TSA→MZG→TSA 報到06:15
-05/12 休假(ADO) | 05/13 休假
-05/14 飛行(馬公梭) B78601 TSA→MZG→TSA→MZG→TSA 報到06:15
-05/15 飛行(廈門) B7511 TSA→XMN 17:00/B7512 XMN→TSA 19:40 報到15:30
-05/16 飛行 BR772 TSA→SHA 14:55/BR771 SHA→TSA 19:40 報到13:25
-05/17 飛行(巴黎) BR87 TPE→CDG（巴黎戴高樂）23:30 報到21:30
-05/18 飛行中(BR87前往巴黎) | 05/19 Layover在巴黎(CDG)
-05/20 飛行 BR88 CDG→TPE 11:20 | 05/21 飛行中(BR88返台)
-05/22 休假(ADO) | 05/23 休假 | 05/24 休假 | 05/25 休假
-05/26 休假(ADO)
-05/27 飛行 BR192 TSA→HND 07:20/BR191 HND→TSA 12:40 報到05:50
-05/28 休假
-05/29 飛行 BR190 TSA→HND 16:20 報到14:50
-05/30 飛行(續) BR189 HND→TSA 10:50
-05/31 飛行 BR192 TSA→HND 07:20 報到05:50
+5æç­è¡¨ï¼
+05/01 ä¼å
+05/02 é£è¡(ééæ¢­) B78801 TSAâKNHâTSAâKNHâTS@ å ±å°06:00
+05/03 é£è¡(ééæ¢­) åä¸ å ±å°06:00
+05/04 å¾å½(Q12) | 05/05 ä¼å(ADO) | 05/06 ä¼å
+05/07 é£è¡ BR772 TSAâSHA 14:55/BR771 SHAâTSA 19:40 å ±å°13:25
+05/08 é£è¡(å»é) B7511 TSAâXMNï¼å»éï¼17:00/B7512 XMNâTSA 19:40 å ±å°15:30
+05/09 é£è¡ BR772 TSAâSHA 14:55/BR771 SHAâTSA 19:40 å ±å°13:25
+05/10 ç¹æ®å(YJ)
+05/11 é£è¡(é¦¬å¬æ¢­) B78601 TSAâMZGâTSAâMZGâTSA å ±å°06:15
+05/12 ä¼å(ADO) | 05/13 ä¼å
+05/14 é£è¡(é¦¬å¬æ¢­) B78601 TSAâMZGâTSAâMZGâTSA å ±å°06:15
+05/15 é£è¡(å»é) B7511 TSAâXMN 17:00/B7512 XMNâTSA 19:40 å ±å°15:30
+05/16 é£è¡ BR772 TSAâSHA 14:55/BR771 SHAâTSA 19:40 å ±å°13:25
+05/17 é£è¡(å·´é») BR87 TPEâCDGï¼å·´é»æ´é«æ¨ï¼23:30 å ±å°21:30
+05/18 é£è¡ä¸­(BR87åå¾å·´é») | 05/19 Layoverå¨å·´é»(CDG)
+05/20 é£è¡ BR88 CDGâTPE 11:20 | 05/21 é£è¡ä¸­(BR88è¿å°)
+05/22 ä¼å(ADO) | 05/23 ä¼å | 05/24 ä¼å | 05/25 ä¼å
+05/26 ä¼å(ADO)
+05/27 é£è¡ BR192 TSAâHND 07:20/BR191 HNDâTSA 12:40 å ±å°05:50
+05/28 ä¼å
+05/29 é£è¡ BR190 TSAâHND 16:20 å ±å°14:50
+05/30 é£è¡(çº) BR189 HNDâTSA 10:50
+05/31 é£è¡ BR192 TSAâHND 07:20 å ±å°05:50
 """
 
-SYSTEM_PROMPT = f"""你是杜珮瑄的長榮航空班表助理。她是長榮航空空服員（員工編號 F59113）。
+SYSTEM_PROMPT = f"""ä½ æ¯æç®ççé·æ¦®èªç©ºç­è¡¨å©çãå¥¹æ¯é·æ¦®èªç©ºç©ºæå¡ï¼å¡å·¥ç·¨è F59113ï¼ã
 
-請用繁體中文回答，語氣自然像朋友聊天，簡潔不囉嗦。
+è«ç¨ç¹é«ä¸­æåç­ï¼èªæ°£èªç¶åæåèå¤©ï¼ç°¡æ½ä¸åå¦ã
 
-她的 4-5 月班表：
+å¥¹ç 4-5 æç­è¡¨ï¼
 {SCHEDULE}
 
-班表代碼說明：
-- DO / ADO：休假
-- Y開頭+字母（YJ/YH/YI）、FL、SL、MEN、AL：各種假別
-- 待命班（字母+數字，如 Q05、Q12、J13）：待命，共3小時，公司可能臨時抓飛
-- LO：Layover（外站過夜）
-- 飛行中：長程航班途中
+ç­è¡¨ä»£ç¢¼èªªæï¼
+- DO / ADOï¼ä¼å
+- Yéé ­+å­æ¯ï¼YJ/YH/YIï¼ãFLãSLãMENãALï¼åç¨®åå¥
+- å¾å½ç­ï¼å­æ¯+æ¸å­ï¼å¦ Q05ãQ12ãJ13ï¼ï¼å¾å½ï¼å±3å°æï¼å¬å¸å¯è½è¨ææé£
+- LOï¼Layoverï¼å¤ç«éå¤ï¼
+- é£è¡ä¸­ï¼é·ç¨èªç­éä¸­
 
-各航班飛行時數（格式 時:分）：
-BR192 TSA→HND: 03:10
-BR191 HND→TSA: 03:25
-BR190 TSA→HND: 03:00
-BR189 HND→TSA: 03:40
-BR118 TPE→SDJ: 03:30
-BR117 SDJ→TPE: 03:50
-BR281 TPE→CEB: 02:50
-BR282 CEB→TPE: 02:55
-BR805 TPE→MFM: 01:55
-BR806 MFM→TPE: 01:55
-BR772 TSA→SHA: 01:35
-BR771 SHA→TSA: 02:05
-B7511 TSA→XMN: 01:40
-B7512 XMN→TSA: 01:45
-BR87 TPE→CDG: 14:55
-BR88 CDG→TPE: 13:25
-B78801 TSA→KNH: 01:05
-B78802 KNH→TSA: 01:00
-B78811 TSA→KNH: 01:05
-B78812 KNH→TSA: 01:00
-B78607/B78609/B78601 TSA→MZG: 00:50
-B78608/B78610/B78602/B78616 MZG→TSA: 00:50
+åèªç­é£è¡ææ¸ï¼æ ¼å¼ æ:åï¼ï¼
+BR192 TSAâHND: 03:10
+BR191 HNDâTSA: 03:25
+BR190 TSAâHND: 03:00
+BR189 HNDâTSA: 03:40
+BR118 TPEâSDJ: 03:30
+BR117 SDJâTPE: 03:50
+BR281 TPEâCEB: 02:50
+BR282 CEBâTPE: 02:55
+BR805 TPEâMFM: 01:55
+BR806 MFMâTPE: 01:55
+BR772 TSAâSHA: 01:35
+BR771 SHAâTSA: 02:05
+B7511 TSAâXMN: 01:40
+B7512 XMNâTSA: 01:45
+BR87 TPEâCDG: 14:55
+BR88 CDGâTPE: 13:25
+B78801 TSAâKNH: 01:05
+B78802 KNHâTSA: 01:00
+B78811 TSAâKNH: 01:05
+B78812 KNHâTSA: 01:00
+B78607/B78609/B78601 TSAâMZG: 00:50
+B78608/B78610/B78602/B78616 MZGâTSA: 00:50
 
-回答原則：
-- 只回答班表相關問題
-- 如果問今天/明天，請根據台北時間判斷日期
-- 不知道的資訊（如組員名單）就說需要登入查詢
-- 遇到不相關的問題，說你只負責班表事宜"""
+åç­ååï¼
+- åªåç­ç­è¡¨ç¸éåé¡
+- å¦æåä»å¤©/æå¤©ï¼è«æ ¹æå°åæéå¤æ·æ¥æ
+- ä¸ç¥éçè³è¨ï¼å¦çµå¡åå®ï¼å°±èªªéè¦ç»å¥æ¥è©¢
+- éå°ä¸ç¸éçåé¡ï¼èªªä½ åªè² è²¬ç­è¡¨äºå®"""
 
 AIRPORTS = {
-    'TSA': '松山', 'TPE': '桃園', 'HND': '東京羽田', 'NRT': '東京成田',
-    'SHA': '上海虹橋', 'PVG': '上海浦東', 'XMN': '廈門', 'MZG': '馬公',
-    'KNH': '金門', 'CDG': '巴黎戴高樂', 'MFM': '澳門', 'CEB': '宿霧',
-    'SDJ': '仙台', 'HKG': '香港', 'BKK': '曼谷', 'SIN': '新加坡',
+    'TSA': 'æ¾å±±', 'TPE': 'æ¡å', 'HND': 'æ±äº¬ç¾½ç°', 'NRT': 'æ±äº¬æç°',
+    'SHA': 'ä¸æµ·è¹æ©', 'PVG': 'ä¸æµ·æµ¦æ±', 'XMN': 'å»é', 'MZG': 'é¦¬å¬',
+    'KNH': 'éé', 'CDG': 'å·´é»æ´é«æ¨', 'MFM': 'æ¾³é', 'CEB': 'å®¿é§',
+    'SDJ': 'ä»å°', 'HKG': 'é¦æ¸¯', 'BKK': 'æ¼è°·', 'SIN': 'æ°å å¡',
 }
 
 DAILY_SCHEDULE = {
@@ -220,7 +220,7 @@ DAILY_SCHEDULE = {
     ]},
 }
 
-WEEKDAY_MAP = {0: '週一', 1: '週二', 2: '週三', 3: '週四', 4: '週五', 5: '週六', 6: '週日'}
+WEEKDAY_MAP = {0: 'é±ä¸', 1: 'é±äº', 2: 'é±ä¸', 3: 'é±å', 4: 'é±äº', 5: 'é±å­', 6: 'é±æ¥'}
 
 
 def build_reminder_message():
@@ -239,20 +239,20 @@ def build_reminder_message():
         return None
 
     if dtype == 'off':
-        return f'😴 明天 {month_day}（{weekday}）休假\n好好放鬆充電！'
+        return f'ð´ æå¤© {month_day}ï¼{weekday}ï¼ä¼å\nå¥½å¥½æ¾é¬åé»ï¼'
 
     if dtype == 'standby':
-        return f'⏰ 明天 {month_day}（{weekday}）待命（{day["code"]}）\n保持手機暢通！'
+        return f'â° æå¤© {month_day}ï¼{weekday}ï¼å¾å½ï¼{day["code"]}ï¼\nä¿æææ©æ¢éï¼'
 
     if dtype in ('fly', 'fly_cont'):
-        lines = [f'✈️ 明天 {month_day}（{weekday}）班表提醒']
+        lines = [f'âï¸ æå¤© {month_day}ï¼{weekday}ï¼ç­è¡¨æé']
         if dtype == 'fly' and day.get('checkin'):
-            lines.append(f'\n報到：{day["checkin"]}')
+            lines.append(f'\nå ±å°ï¼{day["checkin"]}')
         for flt, dep, arr, dep_t, arr_t in day['flights']:
             dep_cn = AIRPORTS.get(dep, dep)
             arr_cn = AIRPORTS.get(arr, arr)
-            lines.append(f'\n{dep_cn} → {arr_cn}  {flt}\n起飛：{dep_t}　落地：{arr_t}')
-        lines.append('\n👥 組員名單需登入查詢')
+            lines.append(f'\n{dep_cn} â {arr_cn}  {flt}\nèµ·é£ï¼{dep_t}ãè½å°ï¼{arr_t}')
+        lines.append('\nð¥ çµå¡åå®éç»å¥æ¥è©¢')
         return ''.join(lines)
 
     return None
@@ -287,23 +287,27 @@ def send_daily_reminder():
         print("No reminder for tomorrow.", flush=True)
 
 
-# Start scheduler — fires every day at 19:50 Taiwan time
+# Start scheduler â fires every day at 19:50 Taiwan time
 scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Taipei'))
 scheduler.add_job(send_daily_reminder, 'cron', hour=19, minute=50)
 scheduler.start()
 
 
-# ── EVA crew list functions ────────────────────────────────────────────────────
+# ââ EVA crew list functions ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def solve_captcha(img_bytes):
     b64 = base64.b64encode(img_bytes).decode()
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     resp = client.messages.create(
         model='claude-haiku-4-5-20251001',
-        max_tokens=10,
+        max_tokens=20,
         messages=[{'role': 'user', 'content': [
             {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/gif', 'data': b64}},
-            {'type': 'text', 'text': '這是驗證碼圖片，只回答圖片中的數字，不要任何其他文字。'}
+            {'type': 'text', 'text': (
+                'éæ¯ä¸å¼µç¶²ç«é©è­ç¢¼ï¼CAPTCHAï¼åçã'
+                'åçä¸­æ 5 åæ¸å­ï¼0-9ï¼ï¼è«å¾å·¦å°å³ä»ç´°è¾¨è­æ¯ä¸åæ¸å­ã'
+                'åªè¼¸åºé 5 åæ¸å­ï¼ä¸è¦ç©ºæ ¼ãä¸è¦æ¨é»ãä¸è¦ä»»ä½èªªææå­ã'
+            )}
         ]}]
     )
     return resp.content[0].text.strip().replace(' ', '')
@@ -332,7 +336,7 @@ def eva_login():
             'txtValidCode': cap_answer,
         }, timeout=15, allow_redirects=True)
         if 'AntiRobot' in login_r.url:
-            print('EVA login failed: CAPTCHA wrong', flush=True)
+            print(f'EVA login failed: redirected to {login_r.url}', flush=True)
             return None, None
         js_r = session.get(EVA_BASE + '/Common/js_Initial.ashx', timeout=10)
         token_m = re.search(r"UserToken\s*=\s*'([^']+)'", js_r.text)
@@ -370,7 +374,7 @@ def format_crew_message(crew_list, flight_label, date_str):
     if not crew_list:
         return None
     date_display = date_str[5:] if len(date_str) >= 10 else date_str
-    lines = [f'✈️ {flight_label} | {date_display} 組員名單\n']
+    lines = [f'âï¸ {flight_label} | {date_display} çµå¡åå®\n']
     for c in crew_list:
         emp_id = c.get('ID', '')
         name = c.get('CNAME', '')
@@ -379,14 +383,14 @@ def format_crew_message(crew_list, flight_label, date_str):
         nick = nick_m.group(1) if nick_m else ''
         pos = c.get('POS', '')
         alloc = c.get('allocation', '')
-        me = '  ◀ 妳' if emp_id == 'F59113' else ''
-        name_str = f'{name}（{nick}）' if nick else name
+        me = '  â å¦³' if emp_id == 'F59113' else ''
+        name_str = f'{name}ï¼{nick}ï¼' if nick else name
         lines.append(f'{pos}  {name_str}  {alloc}{me}')
     return '\n'.join(lines)
 
 
 def get_crew_query_params(user_msg):
-    """Parse '查名單 [BR772] [05/07]' and return (flight_code, date_str, end_airport)."""
+    """Parse 'æ¥åå® [BR772] [05/07]' and return (flight_code, date_str, end_airport)."""
     tpe = pytz.timezone('Asia/Taipei')
     tomorrow = datetime.now(tpe) + timedelta(days=1)
 
@@ -425,28 +429,28 @@ def query_and_push_crew(flight_code, date_str, end_airport):
         airline, num = 'B7', flight_code[2:]
 
     session, token = None, None
-    for attempt in range(2):
+    for attempt in range(3):
         session, token = eva_login()
         if session:
             break
         print(f'Login attempt {attempt + 1} failed', flush=True)
 
     if not session:
-        send_line_push('❌ 登入長榮網站失敗（驗證碼辨識錯誤），請稍後再試')
+        send_line_push('â ç»å¥é·æ¦®ç¶²ç«å¤±æï¼é©è­ç¢¼è¾¨è­é¯èª¤ï¼ï¼è«ç¨å¾åè©¦')
         return
 
     crew = fetch_crew_json(session, token, airline, num, date_str, end_airport)
     if crew is None:
-        send_line_push('❌ 查詢 API 失敗，請稍後再試')
+        send_line_push('â æ¥è©¢ API å¤±æï¼è«ç¨å¾åè©¦')
     elif len(crew) == 0:
-        send_line_push(f'❌ {flight_code} 在 {date_str[5:]} 尚無組員資料')
+        send_line_push(f'â {flight_code} å¨ {date_str[5:]} å°ç¡çµå¡è³æ')
     else:
         msg = format_crew_message(crew, f'{airline}{num}', date_str)
         if msg:
             send_line_push(msg)
 
 
-# ── end EVA crew list functions ────────────────────────────────────────────────
+# ââ end EVA crew list functions ââââââââââââââââââââââââââââââââââââââââââââââââ
 
 
 def verify_signature(body_bytes, signature):
@@ -478,8 +482,8 @@ def reply_to_line(reply_token, text):
 
 def ask_claude(user_message):
     taipei = pytz.timezone('Asia/Taipei')
-    today = datetime.now(taipei).strftime('%Y年%m月%d日（%A）')
-    system_with_date = SYSTEM_PROMPT + f"\n\n今天台北時間是：{today}"
+    today = datetime.now(taipei).strftime('%Yå¹´%mæ%dæ¥ï¼%Aï¼')
+    system_with_date = SYSTEM_PROMPT + f"\n\nä»å¤©å°åæéæ¯ï¼{today}"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     response = client.messages.create(
         model='claude-haiku-4-5-20251001',
@@ -511,22 +515,22 @@ def webhook():
                 reply_token = event['replyToken']
                 user_message = event['message']['text']
 
-                if '查名單' in user_message:
+                if 'æ¥åå®' in user_message:
                     flight_code, date_str, end_airport = get_crew_query_params(user_message)
                     if flight_code:
-                        reply_to_line(reply_token, f'🔍 查詢 {flight_code} {date_str[5:]} 組員名單，請稍等...')
+                        reply_to_line(reply_token, f'ð æ¥è©¢ {flight_code} {date_str[5:]} çµå¡åå®ï¼è«ç¨ç­...')
                         t = threading.Thread(target=query_and_push_crew, args=(flight_code, date_str, end_airport))
                         t.daemon = True
                         t.start()
                     else:
-                        reply_to_line(reply_token, '找不到對應班次，請指定例如：\n查名單 BR772\n查名單 B78607 04/27')
+                        reply_to_line(reply_token, 'æ¾ä¸å°å°æç­æ¬¡ï¼è«æå®ä¾å¦ï¼\næ¥åå® BR772\næ¥åå® B78607 04/27')
                 else:
                     try:
                         response_text = ask_claude(user_message)
                         reply_to_line(reply_token, response_text)
                     except Exception as e:
                         print(f"ERROR: {e}", flush=True)
-                        reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
+                        reply_to_line(reply_token, 'æ±æ­ï¼æç¾å¨æé»å¿ï¼è«ç¨å¾ååæ ð')
 
     return 'OK'
 
