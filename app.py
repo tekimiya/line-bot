@@ -3,15 +3,19 @@ import hmac
 import hashlib
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import requests
 import anthropic
+from apscheduler.schedulers.background import BackgroundScheduler
+import pytz
 
 app = Flask(__name__)
 
 LINE_CHANNEL_SECRET = os.environ['LINE_CHANNEL_SECRET']
 LINE_CHANNEL_ACCESS_TOKEN = os.environ['LINE_CHANNEL_ACCESS_TOKEN']
 ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
+LINE_PUSH_USER_ID = 'U43f403149806d8e5def5b42cca840dd6'
 
 SCHEDULE = """
 4月班表：
@@ -39,7 +43,7 @@ SCHEDULE = """
 
 5月班表：
 05/01 休假
-05/02 飛行(金門梭) B78801 TSA→KNH→TSA→KNH→TSA 報到06:00
+05/02 飛行(金門梭) B78801 TSA→KNH→TSA→KNH→TS@ 報到06:00
 05/03 飛行(金門梭) 同上 報到06:00
 05/04 待命(Q12) | 05/05 休假(ADO) | 05/06 休假
 05/07 飛行 BR772 TSA→SHA 14:55/BR771 SHA→TSA 19:40 報到13:25
@@ -75,13 +79,211 @@ SYSTEM_PROMPT = f"""你是杜珮瑄的長榮航空班表助理。她是長榮航
 - Y開頭+字母（YJ/YH/YI）、FL、SL、MEN、AL：各種假別
 - 待命班（字母+數字，如 Q05、Q12、J13）：待命，共3小時，公司可能臨時抓飛
 - LO：Layover（外站過夜）
-- 飛行中：長程航班途中
+- 飛行$��ﺦ長程航班途中
+
+各航班飛行時數（格式 時:分）：
+BR192 TSA→HND: 03:10
+BR191 HND→TSA: 03:25
+BR190 TSA→HND: 03:00
+BR189 HND→TSA: 03:40
+BR118 TPE→SDJ: 03:30
+BR117 SDJ→TPE: 03:50
+BR281 TPE→CEB: 02:50
+BR282 CEB→TPE: 02:55
+BR805 TPE→MFM: 01:55
+BR806 MFM→TPE: 01:55
+BR772 TSA→SHA: 01:35
+BR771 SHA→TSA: 02:05
+B7511 TSA→XMN: 01:40
+B7512 XMN→TSA: 01:45
+BR87 TPE→CDG: 14:55
+BR88 CDG→TPE: 13:25
+B78801 TSA→KNH: 01:05
+B78802 KNH→TSA: 01:00
+B78811 TSA→KNH: 01:05
+B78812 KNH→TSA: 01:00
+B78607/B78609/B78601 TSA→MZG: 00:50
+B78608/B78610/B78602/B78616 MZG→TSA: 00:50
 
 回答原則：
 - 只回答班表相關問題
 - 如果問今天/明天，請根據台北時間判斷日期
-- 不知道的資訊（如組員名單）就說需要登入查詢
+- 不知道的資訊（如組員名單）就說需要登入查該
 - 遇到不相關的問題，說你只負責班表事宜"""
+
+AIRPORTS = {
+    'TSA': '松山', 'TPE': '桃園', 'HND': '東京羽田', 'NRT': '東京成田',
+    'SHA': '上海虹橋', 'PVG': '上海浦東', 'XMN': '廈門', 'MZG': '馬公',
+    'KNH': '金門', 'CDG': '巴黎戴高樂', 'MFM': '澳門', 'CEB': '宿霧',
+    'SDJ': '仙台', 'HKG': '香港', 'BKK': '曼谷', 'SIN': '新加坡',
+}
+
+DAILY_SCHEDULE = {
+    '04/27': {'type': 'fly', 'checkin': '07:20', 'flights': [
+        ('B78607', 'TSA', 'MZG', '08:20', '09:10'),
+        ('B78608', 'MZG', 'TSA', '10:00', '10:50'),
+        ('B78609', 'TSA', 'MZG', '11:40', '12:30'),
+        ('B78616', 'MZG', 'TSA', '13:40', '14:30'),
+    ]},
+    '04/28': {'type': 'standby', 'code': 'Q05'},
+    '04/29': {'type': 'fly', 'checkin': '14:50', 'flights': [
+        ('BR190', 'TSA', 'HND', '16:20', '20:20'),
+    ]},
+    '04/30': {'type': 'fly_cont', 'flights': [
+        ('BR189', 'HND', 'TSA', '10:50', '13:30'),
+    ]},
+    '05/01': {'type': 'off'},
+    '05/02': {'type': 'fly', 'checkin': '06:00', 'flights': [
+        ('B78801', 'TSA', 'KNH', '07:00', '08:05'),
+        ('B78802', 'KNH', 'TSA', '08:55', '09:55'),
+        ('B78811', 'TSA', 'KNH', '10:45', '11:50'),
+        ('B78812', 'KNH', 'TSA', '12:40', '13:40'),
+    ]},
+    '05/03': {'type': 'fly', 'checkin': '06:00', 'flights': [
+        ('B78801', 'TSA', 'KNH', '07:00', '08:05'),
+        ('B78802', 'KNH', 'TSA', '08:55', '09:55'),
+        ('B78811', 'TSA', 'KNH', '10:45', '11:50'),
+        ('B78812', 'KNH', 'TSA', '12:40', '13:40'),
+    ]},
+    '05/04': {'type': 'standby', 'code': 'Q12'},
+    '05/05': {'type': 'off'},
+    '05/06': {'type': 'off'},
+    '05/07': {'type': 'fly', 'checkin': '13:25', 'flights': [
+        ('BR772', 'TSA', 'SHA', '14:55', '16:30'),
+        ('BR771', 'SHA', 'TSA', '19:40', '21:45'),
+    ]},
+    '05/08': {'type': 'fly', 'checkin': '15:30', 'flights': [
+        ('B7511', 'TSA', 'XMN', '17:00', '18:40'),
+        ('B7512', 'XMN', 'TSA', '19:40', '21:25'),
+    ]},
+    '05/09': {'type': 'fly', 'checkin': '13:25', 'flights': [
+        ('BR772', 'TSA', 'SHA', '14:55', '16:30'),
+        ('BR771', 'SHA', 'TSA', '19:40', '21:45'),
+    ]},
+    '05/10': {'type': 'off'},
+    '05/11': {'type': 'fly', 'checkin': '06:15', 'flights': [
+        ('B78601', $TSA', 'MZG', '07:15', '08:05'),
+        ('B78602', 'MZG', 'TSA', '08:55', '09:45'),
+        ('B78609', 'TSA', 'MZG', '10:35', '11:25'),
+        ('B78610', 'MZG', 'TSA', '12:15', '13:05'),
+    ]},
+    '05/12': {'type': 'off'},
+    '05/13': {'type': 'off'},
+    '05/14': {'type': 'fly', 'checkin': '06:15', 'flights': [
+        ('B78601', 'TSA', 'MZG', '07:15', '08:05'),
+        ('B78602', 'MZG', 'TSA', '08:55', '09:45'),
+        ('B78609', 'TSA', 'MZG', '10:35', '11:25'),
+        ('B78610', 'MZG', 'TSA', '12:15', '13:05'),
+    ]},
+    '05/15': {'type': 'fly', 'checkin': '15:30', 'flights': [
+        ('B7511', 'TSA', 'XMN', '17:00', '18:40'),
+        ('B7512', 'XMN', 'TSA', '19:40', '21:25'),
+    ]},
+    '05/16': {'type': 'fly', 'checkin': '13:25', 'flights': [
+        ('BR772', 'TSA', 'SHA', '14:55', '16:30'),
+        ('BR771', 'SHA', 'TSA', '19:40', '21:45'),
+    ]},
+    '05/17': {'type': 'fly', 'checkin': '21:30', 'flights': [
+        ('BR87', 'TPE', 'CDG', '23:30', '(+1)08:25'),
+    ]},
+    '05/18': {'type': 'in_flight'},
+    '05/19': {'type': 'layover'},
+    '05/20': {'type': 'fly_cont', 'flights': [
+        ('BR88', 'CDG', 'TPE', '11:20', '(+1)06:45'),
+    ]},
+    '05/21': {'type': 'in_flight'},
+    '05/22': {'type': 'off'},
+    '05/23': {'type': 'off'},
+    '05/24': {'type': 'off'},
+    '05/25': {'type': 'off'},
+    '05/26': {'type': 'off'},
+    '05/27': {'type': 'fly', 'checkin': '05:50', 'flights': [
+        ('BR192', 'TSA', 'HND', '07:20', '11:30'),
+        ('BR191', 'HND', 'TSA', '12:40', '15:05'),
+    ]},
+    '05/28': {'type': 'off'},
+    '05/29': {'type': 'fly', 'checkin': '14:50', 'flights': [
+        ('BR190', 'TSA', 'HND', '16:20', '20:20'),
+    ]},
+    '05/30': {'type': 'fly_cont', 'flights': [
+        ('BR189', 'HND', 'TSA', '10:50', '13:30'),
+    ]},
+    '05/31': {'type': 'fly', 'checkin': '05:50', 'flights': [
+        ('BR192', 'TSA', 'HND', '07:20', '11:30'),
+    ]},
+}
+
+WEEKDAY_MAP = {0: '週一', 1: '週二', 2: '週三', 3: '週四', 4: '週五', 5: '週六', 6: '週日'}
+
+
+def build_reminder_message():
+    tpe = pytz.timezone('Asia/Taipei')
+    tomorrow = datetime.now(tpe) + timedelta(days=1)
+    month_day = tomorrow.strftime('%m/%d')
+    weekday = WEEKDAY_MAP[tomorrow.weekday()]
+
+    day = DAILY_SCHEDULE.get(month_day)
+    if not day:
+        return None
+
+    dtype = day['type']
+
+    if dtype in ('in_flight', 'layover'):
+        return None
+
+    if dtype == 'off':
+        return f'😴 明天 {month_day}（{weekday}）休假\n好好放鬆充電！'
+
+    if dtype == 'standby':
+        return f'⏰ 明天 {month_day}（{weekday}）待命（{day["code"]}）\n保持手機暢通！'
+
+    if dtype in ('fly', 'fly_cont'):
+        lines = [f'✈️ 明天 {month_day}（{weekday}）班表提醒']
+        if dtype == 'fly' and day.get('checkin'):
+            lines.append(f'\n報到：{day["checkin"]}')
+        for flt, dep, arr, dep_t, arr_t in day['flights']:
+            dep_cn = AIRPORTS.get(dep, dep)
+            arr_cn = AIRPORTS.get(arr, arr)
+            lines.append(f'\n{dep_cn} → {arr_cn}  {flt}\n起飛：{dep_t}　落地：{arr_t}')
+        lines.append('\n👥 組員名單需登入查詢')
+        return ''.join(lines)
+
+    return None
+
+
+def send_line_push(text):
+    try:
+        resp = requests.post(
+            'https://api.line.me/v2/bot/message/push',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+            },
+            json={
+                'to': LINE_PUSH_USER_ID,
+                'messages': [{'type': 'text', 'text': text}]
+            },
+            timeout=10
+        )
+        print(f"Push sent: {resp.status_code}", flush=True)
+    except Exception as e:
+        print(f"Push error: {e}", flush=True)
+
+
+def send_daily_reminder():
+    print("Running daily reminder...", flush=True)
+    msg = build_reminder_message()
+    if msg:
+        send_line_push(msg)
+        print("Daily reminder sent.", flush=True)
+    else:
+        print("No reminder for tomorrow.", flush=True)
+
+
+# Start scheduler — fires every day at 19:50 Taiwan time
+scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Taipei'))
+scheduler.add_job(send_daily_reminder, 'cron', hour=19, minute=50)
+scheduler.start()
 
 
 def verify_signature(body_bytes, signature):
@@ -112,8 +314,6 @@ def reply_to_line(reply_token, text):
 
 
 def ask_claude(user_message):
-    from datetime import datetime
-    import pytz
     taipei = pytz.timezone('Asia/Taipei')
     today = datetime.now(taipei).strftime('%Y年%m月%d日（%A）')
     system_with_date = SYSTEM_PROMPT + f"\n\n今天台北時間是：{today}"
