@@ -112,11 +112,16 @@ def reply_to_line(reply_token, text):
 
 
 def ask_claude(user_message):
+    from datetime import datetime
+    import pytz
+    taipei = pytz.timezone('Asia/Taipei')
+    today = datetime.now(taipei).strftime('%Y年%m月%d日（%A）')
+    system_with_date = SYSTEM_PROMPT + f"\n\n今天台北時間是：{today}"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     response = client.messages.create(
         model='claude-haiku-4-5-20251001',
         max_tokens=500,
-        system=SYSTEM_PROMPT,
+        system=system_with_date,
         messages=[{'role': 'user', 'content': user_message}]
     )
     return response.content[0].text
