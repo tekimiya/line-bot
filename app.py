@@ -12,7 +12,7 @@ import anthropic
 from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 
-app = Flash(__name__)
+app = Flask(__name__)
 
 LINE_CHANNEL_SECRET = os.environ['LINE_CHANNEL_SECRET']
 LINE_CHANNEL_ACCESS_TOKEN = os.environ['LINE_CHANNEL_ACCESS_TOKEN']
@@ -50,7 +50,7 @@ SCHEDULE = """
 
 5æç­è¡¨ï¼
 05/01 ä¼å
-05/02 é£è¡(ééæ¢­) B78801 TSAâKNHâTSAâKNHâTS@ å ±å°06:00
+05/02 é£è¡(ééæ¢­) B78801 TSAâKNHâTSAâKNHâTSA å ±å°06:00
 05/03 é£è¡(ééæ¢­) åä¸ å ±å°06:00
 05/04 å¾å½(Q12) | 05/05 ä¼å(ADO) | 05/06 ä¼å
 05/07 é£è¡ BR772 TSAâSHA 14:55/BR771 SHAâTSA 19:40 å ±å°13:25
@@ -310,10 +310,12 @@ def solve_captcha(img_bytes):
             )}
         ]}]
     )
-    return resp.content[0].text.strip().replace(' ', '')
+    digits = re.sub(r'\D', '', resp.content[0].text.strip())
+    return digits if len(digits) == 5 else None
 
 
 def eva_login():
+    import time
     session = requests.Session()
     session.headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
     try:
@@ -323,11 +325,18 @@ def eva_login():
         if not (vs and vsg):
             print('EVA login: VIEWSTATE not found', flush=True)
             return None, None
-        import time
-        cap_url = EVA_BASE + f'/Common/ValidateCode.ashx?t={time.time()}'
-        cap_img = session.get(cap_url, timeout=10)
-        cap_answer = solve_captcha(cap_img.content)
-        print(f'CAPTCHA answer: {cap_answer}', flush=True)
+        cap_answer = None
+        for cap_attempt in range(3):
+            cap_url = EVA_BASE + f'/Common/ValidateCode.ashx?t={time.time()}'
+            cap_img = session.get(cap_url, timeout=10)
+            cap_answer = solve_captcha(cap_img.content)
+            if cap_answer:
+                print(f'CAPTCHA answer: {cap_answer}', flush=True)
+                break
+            print(f'CAPTCHA attempt {cap_attempt + 1} bad result, retrying...', flush=True)
+        if not cap_answer:
+            print('CAPTCHA: failed to get 5 digits after 3 attempts', flush=True)
+            return None, None
         login_r = session.post(EVA_BASE + '/WAL/AntiRobot.aspx', data={
             '__VIEWSTATE': vs.group(1),
             '__VIEWSTATEGENERATOR': vsg.group(1),
