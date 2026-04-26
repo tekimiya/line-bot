@@ -125,20 +125,21 @@ def webhook():
     body_bytes = request.get_data()
     signature = request.headers.get('X-Line-Signature', '')
 
-    if not verify_signature(body_bytes, signature):
-        abort(400)
-
     data = json.loads(body_bytes)
 
-    for event in data.get('events', []):
-        if event.get('type') == 'message' and event['message'].get('type') == 'text':
-            reply_token = event['replyToken']
-            user_message = event['message']['text']
-            try:
-                response_text = ask_claude(user_message)
-                reply_to_line(reply_token, response_text)
-            except Exception:
-                reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
+    if data.get('events'):
+        if not verify_signature(body_bytes, signature):
+            abort(400)
+
+        for event in data['events']:
+            if event.get('type') == 'message' and event['message'].get('type') == 'text':
+                reply_token = event['replyToken']
+                user_message = event['message']['text']
+                try:
+                    response_text = ask_claude(user_message)
+                    reply_to_line(reply_token, response_text)
+                except Exception:
+                    reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
 
     return 'OK'
 
