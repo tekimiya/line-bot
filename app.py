@@ -1,8 +1,10 @@
 import os
+import re
 import hmac
 import hashlib
 import base64
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, abort
 import requests
@@ -16,6 +18,11 @@ LINE_CHANNEL_SECRET = os.environ['LINE_CHANNEL_SECRET']
 LINE_CHANNEL_ACCESS_TOKEN = os.environ['LINE_CHANNEL_ACCESS_TOKEN']
 ANTHROPIC_API_KEY = os.environ['ANTHROPIC_API_KEY']
 LINE_PUSH_USER_ID = 'U43f403149806d8e5def5b42cca840dd6'
+
+EVA_BASE = 'https://www.evaangel.com'
+EVA_API = EVA_BASE + '/cabinwsv/api/Schedule/'
+EVA_USER = 'f59113'
+EVA_PASSWORD = os.environ.get('EVA_PASSWORD', '')
 
 SCHEDULE = """
 4月班表：
@@ -43,7 +50,7 @@ SCHEDULE = """
 
 5月班表：
 05/01 休假
-05/02 飛行(金門梭) B78801 TSA→KNH→TSA→KNH→TS@ 報到06:00
+05/02 飛行(金門梭) B78801 TSA→KNH→TSA→KNH→TSA 報到06:00
 05/03 飛行(金門梭) 同上 報到06:00
 05/04 待命(Q12) | 05/05 休假(ADO) | 05/06 休假
 05/07 飛行 BR772 TSA→SHA 14:55/BR771 SHA→TSA 19:40 報到13:25
@@ -79,7 +86,7 @@ SYSTEM_PROMPT = f"""你是杜珮瑄的長榮航空班表助理。她是長榮航
 - Y開頭+字母（YJ/YH/YI）、FL、SL、MEN、AL：各種假別
 - 待命班（字母+數字，如 Q05、Q12、J13）：待命，共3小時，公司可能臨時抓飛
 - LO：Layover（外站過夜）
-- 飛行$��ﺦ長程航班途中
+- 飛行$��：長程航班途中
 
 各航班飛行時數（格式 時:分）：
 BR192 TSA→HND: 03:10
@@ -108,7 +115,7 @@ B78608/B78610/B78602/B78616 MZG→TSA: 00:50
 回答原則：
 - 只回答班表相關問題
 - 如果問今天/明天，請根據台北時間判斷日期
-- 不知道的資訊（如組員名單）就說需要登入查該
+- 不知道的資訊（如組員名單）就說需要登入查詢
 - 遇到不相關的問題，說你只負責班表事宜"""
 
 AIRPORTS = {
@@ -162,7 +169,7 @@ DAILY_SCHEDULE = {
     ]},
     '05/10': {'type': 'off'},
     '05/11': {'type': 'fly', 'checkin': '06:15', 'flights': [
-        ('B78601', $TSA', 'MZG', '07:15', '08:05'),
+        ('B78601', 'TSA', 'MZG', '07:15', '08:05'),
         ('B78602', 'MZG', 'TSA', '08:55', '09:45'),
         ('B78609', 'TSA', 'MZG', '10:35', '11:25'),
         ('B78610', 'MZG', 'TSA', '12:15', '13:05'),
@@ -286,6 +293,163 @@ scheduler.add_job(send_daily_reminder, 'cron', hour=19, minute=50)
 scheduler.start()
 
 
+# ── EVA crew list functions ────────────────────────────────────────────────────
+
+def solve_captcha(img_bytes):
+    b64 = base64.b64encode(img_bytes).decode()
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    resp = client.messages.create(
+        model='claude-haiku-4-5-20251001',
+        max_tokens=10,
+        messages=[{'role': 'user', 'content': [
+            {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/gif', 'data': b64}},
+            {'type': 'text', 'text': '這是驗證碼圖片，只回答圖片中的數字，不要任何其他文字。'}
+        ]}]
+    )
+    return resp.content[0].text.strip().replace(' ', '')
+
+
+def eva_login():
+    session = requests.Session()
+    session.headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+    try:
+        r = session.get(EVA_BASE + '/WAL/AntiRobot.aspx', timeout=15)
+        vs = re.search(r'id="__VIEWSTATE"\s+value="([^"]*)"', r.text)
+        vsg = re.search(r'id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"', r.text)
+        cap_src = re.search(r'id="imgValidCode"[^>]+src="([^"]+)"', r.text)
+        if not (vs and vsg and cap_src):
+            return None, None
+        cap_url = cap_src.group(1)
+        if not cap_url.startswith('http'):
+            cap_url = EVA_BASE + cap_url
+        cap_img = session.get(cap_url, timeout=10)
+        cap_answer = solve_captcha(cap_img.content)
+        print(f'CAPTCHA answer: {cap_answer}', flush=True)
+        login_r = session.post(EVA_BASE + '/WAL/AntiRobot.aspx', data={
+            '__VIEWSTATE': vs.group(1),
+            '__VIEWSTATEGENERATOR': vsg.group(1),
+            'ID': EVA_USER,
+            'PWD': EVA_PASSWORD,
+            'txtValidCode': cap_answer,
+        }, timeout=15, allow_redirects=True)
+        if 'AntiRobot' in login_r.url:
+            print('EVA login failed: CAPTCHA wrong', flush=True)
+            return None, None
+        js_r = session.get(EVA_BASE + '/Common/js_Initial.ashx', timeout=10)
+        token_m = re.search(r"UserToken\s*=\s*'([^']+)'", js_r.text)
+        token = token_m.group(1) if token_m else ''
+        print(f'EVA login OK, token: {token[:8]}...', flush=True)
+        return session, token
+    except Exception as e:
+        print(f'EVA login error: {e}', flush=True)
+        return None, None
+
+
+def fetch_crew_json(session, token, airline, flight_num, flight_date, end_airport):
+    headers = {
+        'x-cookie-prefix-header': 'Cabin_',
+        'x-user-company-header': 'EVA',
+        'x-user-token-header': token,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': EVA_BASE + '/Entry/Duty/FlightDutyMayfly/FlightKey.aspx',
+    }
+    try:
+        url = (f"{EVA_API}Get_MayflyList"
+               f"?parm_FlightStartDate={flight_date}"
+               f"&AirlineCode={airline}&FlightNumber={flight_num}"
+               f"&EndAirport={end_airport}&parm_Qual=*&ADMIN_TYPE=O")
+        r = session.get(url, headers=headers, timeout=15)
+        print(f'Crew API status: {r.status_code}', flush=True)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        print(f'Crew API error: {e}', flush=True)
+    return None
+
+
+def format_crew_message(crew_list, flight_label, date_str):
+    if not crew_list:
+        return None
+    date_display = date_str[5:] if len(date_str) >= 10 else date_str
+    lines = [f'✈️ {flight_label} | {date_display} 組員名單\n']
+    for c in crew_list:
+        emp_id = c.get('ID', '')
+        name = c.get('CNAME', '')
+        ename = c.get('ENAME', '')
+        nick_m = re.search(r'\(([^)]+)\)', ename)
+        nick = nick_m.group(1) if nick_m else ''
+        pos = c.get('POS', '')
+        alloc = c.get('allocation', '')
+        me = '  ◀ 妳' if emp_id == 'F59113' else ''
+        name_str = f'{name}（{nick}）' if nick else name
+        lines.append(f'{pos}  {name_str}  {alloc}{me}')
+    return '\n'.join(lines)
+
+
+def get_crew_query_params(user_msg):
+    """Parse '查名單 [BR772] [05/07]' and return (flight_code, date_str, end_airport)."""
+    tpe = pytz.timezone('Asia/Taipei')
+    tomorrow = datetime.now(tpe) + timedelta(days=1)
+
+    flight_m = re.search(r'\b(BR\d+|B7\d+)\b', user_msg.upper())
+    date_m = re.search(r'(\d{1,2})[/](\d{2})', user_msg)
+
+    if date_m:
+        month_day = f'{date_m.group(1).zfill(2)}/{date_m.group(2)}'
+        date_str = f'2026/{month_day}'
+    else:
+        month_day = tomorrow.strftime('%m/%d')
+        date_str = '2026/' + month_day
+
+    day_info = DAILY_SCHEDULE.get(month_day)
+    if not day_info or day_info.get('type') not in ('fly', 'fly_cont'):
+        return None, None, None
+    flights = day_info.get('flights', [])
+    if not flights:
+        return None, None, None
+
+    if flight_m:
+        code = flight_m.group(1)
+        for flt in flights:
+            if flt[0].upper() == code:
+                return code, date_str, flt[2]
+        return code, date_str, flights[0][2]
+    else:
+        flt = flights[0]
+        return flt[0], date_str, flt[2]
+
+
+def query_and_push_crew(flight_code, date_str, end_airport):
+    if flight_code.startswith('BR'):
+        airline, num = 'BR', flight_code[2:]
+    else:
+        airline, num = 'B7', flight_code[2:]
+
+    session, token = None, None
+    for attempt in range(2):
+        session, token = eva_login()
+        if session:
+            break
+        print(f'Login attempt {attempt + 1} failed', flush=True)
+
+    if not session:
+        send_line_push('❌ 登入長榮網站失敗（驗證碼辨識錯誤），請稍後再試')
+        return
+
+    crew = fetch_crew_json(session, token, airline, num, date_str, end_airport)
+    if crew is None:
+        send_line_push('❌ 查詢 API 失敗，請稍後再試')
+    elif len(crew) == 0:
+        send_line_push(f'❌ {flight_code} 在 {date_str[5:]} 尚無組員資料')
+    else:
+        msg = format_crew_message(crew, f'{airline}{num}', date_str)
+        if msg:
+            send_line_push(msg)
+
+
+# ── end EVA crew list functions ────────────────────────────────────────────────
+
+
 def verify_signature(body_bytes, signature):
     hash_value = hmac.new(
         LINE_CHANNEL_SECRET.encode('utf-8'),
@@ -315,7 +479,7 @@ def reply_to_line(reply_token, text):
 
 def ask_claude(user_message):
     taipei = pytz.timezone('Asia/Taipei')
-    today = datetime.now(taipei).strftime('%Y年%m月%d日（%A）')
+    today = datetime.now(taipei).strftime('%Y噴%m月%d日（%A）')
     system_with_date = SYSTEM_PROMPT + f"\n\n今天台北時間是：{today}"
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     response = client.messages.create(
@@ -347,12 +511,23 @@ def webhook():
             if event.get('type') == 'message' and event['message'].get('type') == 'text':
                 reply_token = event['replyToken']
                 user_message = event['message']['text']
-                try:
-                    response_text = ask_claude(user_message)
-                    reply_to_line(reply_token, response_text)
-                except Exception as e:
-                    print(f"ERROR: {e}", flush=True)
-                    reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
+
+                if '查名單' in user_message:
+                    flight_code, date_str, end_airport = get_crew_query_params(user_message)
+                    if flight_code:
+                        reply_to_line(reply_token, f'🔍 查詢 {flight_code} {date_str[5:]} 組員名單，請稍等...')
+                        t = threading.Thread(target=query_and_push_crew, args=(flight_code, date_str, end_airport))
+                        t.daemon = True
+                        t.start()
+                    else:
+                        reply_to_line(reply_token, '找不到對應班次，請指定例如：\n查名單 BR772\n查名單 B78607 04/27')
+                else:
+                    try:
+                        response_text = ask_claude(user_message)
+                        reply_to_line(reply_token, response_text)
+                    except Exception as e:
+                        print(f"ERROR: {e}", flush=True)
+                        reply_to_line(reply_token, '抱歉，我現在有點忙，請稍後再問我 😅')
 
     return 'OK'
 
