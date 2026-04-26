@@ -95,7 +95,7 @@ def verify_signature(body_bytes, signature):
 
 
 def reply_to_line(reply_token, text):
-    requests.post(
+    resp = requests.post(
         'https://api.line.me/v2/bot/message/reply',
         headers={
             'Content-Type': 'application/json',
@@ -107,6 +107,8 @@ def reply_to_line(reply_token, text):
         },
         timeout=10
     )
+    if resp.status_code != 200:
+        print(f"LINE API error: {resp.status_code} {resp.text}", flush=True)
 
 
 def ask_claude(user_message):
